@@ -28,6 +28,37 @@ const MAX_WINDOW: usize = 3;
 /// How long the hints may grow. Whisper's prompt holds 224 tokens.
 const HINT_CHARS: usize = 400;
 
+/// The English a Taiwanese engineer says inside Mandarin every day. The
+/// Speech Model writes English in lower case, so these are what turn "pr"
+/// into "PR"; they are also its hints. Words whose sound sits next to a
+/// common one ("Rust" and "rest") are left for the user to add.
+pub const SEED: &str = "\
+# Talkify 詞庫，一行一筆：
+#   Hyprland                 偏好的寫法（大小寫照這裡，也會提示給語音模型）
+#   歐瑪奇 -> Omarchy         修正：聽到左邊，寫成右邊
+#   我的信箱 => me@x.dev      片語：說左邊，貼上右邊
+# 選取改好的字再執行 `talkify teach`，會自動把修正加到這裡。
+Omarchy
+Hyprland
+Quickshell
+Walker
+Claude Code
+GitHub
+Docker
+Kubernetes
+PostgreSQL
+TypeScript
+JavaScript
+Python
+PR
+API
+CI
+JSON
+YAML
+SSH
+AWS
+";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
   Word,

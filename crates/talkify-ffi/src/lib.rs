@@ -44,7 +44,9 @@ pub unsafe extern "C" fn talkify_dictate(
   } else {
     unsafe { std::slice::from_raw_parts(samples, count) }
   };
-  let vocabulary = Vocabulary::parse(&unsafe { text(vocabulary) }.unwrap_or_default());
+  // Without a words file the seed still turns "pr" into "PR".
+  let vocabulary = unsafe { text(vocabulary) }.unwrap_or_else(|| talkify_core::vocab::SEED.into());
+  let vocabulary = Vocabulary::parse(&vocabulary);
   let send_phrases = unsafe { text(send_phrases) }.unwrap_or_default();
   let dictated = dictate(
     &mut speech

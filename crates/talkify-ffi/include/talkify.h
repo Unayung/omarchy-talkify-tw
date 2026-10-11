@@ -16,8 +16,8 @@ TalkifySpeech *talkify_open(const char *weights_path);
 // One finished dictation: 16 kHz mono samples in, text out, after the Tidy
 // pass and the Vocabulary.
 //
-//   vocabulary    the words file's text, or NULL. Its words are also the
-//                 model's hints.
+//   vocabulary    the words file's text, or NULL for the seed vocabulary.
+//                 Its words are also the model's hints.
 //   send_phrases  "送出, send it", or NULL when a spoken send must stay text.
 //
 // Returns JSON, {"text": "...", "raw": "...", "send": false}, to be freed
