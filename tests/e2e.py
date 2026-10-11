@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import shutil
 import socket
 import subprocess
@@ -30,7 +31,6 @@ REPO = Path(__file__).resolve().parent.parent
 BINARY = REPO / "target" / "release" / "talkify"
 MODELS = Path.home() / ".local/share/talkify/models"
 SINK = "talkify_e2e"
-SPIKE_AUDIO = REPO / "spikes" / "parakeet" / "audio"
 
 
 class Daemon:
@@ -151,6 +151,7 @@ def say(root: Path, name: str, ssml: str, speed=150) -> Path:
 
 
 VOICE = "zh-TW-HsiaoChenNeural"
+ENGLISH = "en-US-AriaNeural"
 CLIPS = Path.home() / ".cache" / "talkify-e2e"
 
 
@@ -180,6 +181,20 @@ def speak(root: Path, name: str, *parts, voice=VOICE) -> Path:
                   f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1", "-ar", "16000", "-ac", "1", str(out)],
                  check=True)
   return out
+
+
+def jfk() -> Path:
+  """Eleven seconds of a real voice: whisper.cpp's sample, fetched once."""
+  CLIPS.mkdir(parents=True, exist_ok=True)
+  clip = CLIPS / "jfk.wav"
+  if not clip.exists():
+    subprocess.run(["curl", "--fail", "--silent", "--location", "--output", str(clip),
+                    "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/samples/jfk.wav"], check=True)
+  return clip
+
+
+def short(root: Path) -> Path:
+  return say(root, "short", "This is a short test sentence.")
 
 
 def pause(ms=700):
@@ -282,7 +297,7 @@ def status_prints_the_greeting_and_exits(d, root):
 
 @test
 def plain(d, root):
-  result, _ = d.dictate(SPIKE_AUDIO / "jfk.wav")
+  result, _ = d.dictate(jfk())
   text = normalized(result["text"])
   assert "ask not what your country can do for you" in text, result
   assert result["inserted"], result
@@ -312,7 +327,7 @@ def spoken_punctuation(d, root):
 def scratch_that(d, root):
   # espeak's "scratch that" and "delete that" are both too slurred for the
   # Speech Model, so this one is a neural voice.
-  clip = speak(root, "scratch", "Lunch is at noon.", 700, "Scratch that.", 700, "Lunch is at one.", voice="en-US-AriaNeural")
+  clip = speak(root, "scratch", "Lunch is at noon.", 700, "Scratch that.", 700, "Lunch is at one.", voice=ENGLISH)
   result, _ = d.dictate(clip)
   text = normalized(result["text"])
   assert "noon" not in text and "delete" not in text, result
@@ -338,7 +353,7 @@ def spoken_send(d, root):
   # Terminals send on the spoken phrase and drop the closing period by default.
   d.window_file.write_text("foot terminal")
   try:
-    result, _ = d.dictate(say(root, "send", f"Run the tests {pause(800)} send it."))
+    result, _ = d.dictate(speak(root, "send", "Run the tests.", 800, "Send it.", voice=ENGLISH))
     assert result["sent"], result
     assert result["rule"] == "terminal", result
     assert "send" not in normalized(result["text"]), result
@@ -346,10 +361,10 @@ def spoken_send(d, root):
     assert "enter true" in d.log_text(), "the paste was not followed by Enter"
     # Elsewhere the phrase is just words until an App rule says otherwise.
     d.window_file.write_text("org.talkify.Chat")
-    result, _ = d.dictate(say(root, "nosend", f"Run the tests {pause(800)} send it."))
+    result, _ = d.dictate(speak(root, "nosend", "Run the tests.", 800, "Send it.", voice=ENGLISH))
     assert not result["sent"] and "send" in normalized(result["text"]), result
     assert d.command({"cmd": "config-set", "key": "apps.org.talkify.Chat.send", "value": "spoken"}) == "ok"
-    result, _ = d.dictate(say(root, "chatsend", f"Thank you very much {pause(800)} send it."))
+    result, _ = d.dictate(speak(root, "chatsend", "Thank you very much.", 800, "Send it.", voice=ENGLISH))
     assert result["sent"] and result["rule"] == "org.talkify.Chat", result
     assert "thank you" in normalized(result["text"]) and "send" not in normalized(result["text"]), result
   finally:
@@ -364,7 +379,8 @@ def mandarin_with_english_mixed_in(d, root):
   assert "請幫我 review 這個" in text, result
   assert " deploy 的 script 改成用" in text, result
   result, _ = d.dictate(speak(root, "plain", "今天下午三點要跟客戶開會，記得先把報告準備好。"))
-  assert " " not in result["text"].strip(), result
+  # Chinese runs on without spaces; only a numeral or English is set off.
+  assert not re.search(r"[\u4e00-\u9fff] [\u4e00-\u9fff]", result["text"]), result
   assert "客戶開會" in result["text"] and "報告準備好" in result["text"], result
 
 
@@ -405,7 +421,7 @@ def mandarin_spoken_send(d, root):
 
 @test
 def history_paste_again_and_retry(d, root):
-  result, _ = d.dictate(SPIKE_AUDIO / "espeak_short_16k.wav")
+  result, _ = d.dictate(short(root))
   d.drain()
   assert d.command({"cmd": "paste-last", "index": 0}) == "ok"
   replayed = d.wait_for(lambda e: e["t"] == "replayed", 10)
@@ -442,7 +458,7 @@ def teach(d, root):
 def live_insertion(d, root):
   assert d.command({"cmd": "config-set", "key": "insertion.live", "value": "true"}) == "ok"
   before = d.log_text().count("dry live insert \"")
-  result, seen = d.dictate(SPIKE_AUDIO / "jfk.wav")
+  result, seen = d.dictate(jfk())
   chunks = d.log_text().count("dry live insert \"") - before
   assert chunks >= 3, f"only {chunks} live chunks"
   assert "ask not what your country can do for you" in normalized(result["text"]), result
@@ -460,7 +476,7 @@ def pause_session(d, root):
   time.sleep(0.3)
   assert d.command({"cmd": "pause"}) == "ok"
   d.wait_for(lambda e: e["t"] == "hud" and e.get("paused"), 5)
-  play(SPIKE_AUDIO / "jfk.wav")  # spoken while paused: must be dropped
+  play(jfk())  # spoken while paused: must be dropped
   assert d.command({"cmd": "pause"}) == "ok"
   d.wait_for(lambda e: e["t"] == "hud" and not e.get("paused"), 5)
   play(say(root, "after-pause", "Only this sentence."))
@@ -474,7 +490,7 @@ def pause_session(d, root):
 @test
 def insights(d, root):
   d.drain()
-  d.dictate(SPIKE_AUDIO / "espeak_short_16k.wav")
+  d.dictate(short(root))
   usage = json.loads((d.data_dir / "usage.json").read_text())
   assert usage["days"][0]["words"] > 0 and usage["days"][0]["sessions"] > 0, usage
   with socket.socket(socket.AF_UNIX) as s:

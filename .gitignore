@@ -1,9 +1,6 @@
 # Rust
 /target
 
-# The early Parakeet spike, kept locally only
-/spikes/
-
 # Compiled HUD shaders (plugin/shaders/build.sh)
 /plugin/shaders/*.qsb
 

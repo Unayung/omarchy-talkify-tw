@@ -1,55 +1,59 @@
-<h1 align="center">Talkify for Omarchy</h1>
+<h1 align="center">Talkify for Omarchy（台灣版）</h1>
 
-<h3 align="center">Fast, beautiful and private voice dictation</h3>
+<h3 align="center">給台灣工程師用的語音輸入：中文夾英文，直接講</h3>
 
 <p align="center">
-  <img src=".github/assets/hero.jpg" width="100%" alt="The Talkify pill in the middle of an Omarchy desktop in Tokyo Night, saying 'Looks good in Tokyo Night.' above the line 'It follows your Omarchy theme.'" />
+  <img src=".github/assets/hero.jpg" width="100%" alt="Omarchy 桌面中央的 Talkify 膠囊" />
 </p>
 
-Hold Right Super, say what you want to write, and let go. The words land in the window you were typing in: a terminal, a browser, an editor, a chat.
+按住右 Super 鍵，把想打的字講出來，放開。文字會出現在你原本在打字的視窗：終端機、瀏覽器、編輯器、聊天室都可以。
 
-Talkify started on the Mac, as [Talkify for macOS](https://github.com/tornikegomareli/Talkify) ([usetalkify.app](https://usetalkify.app)). This is the same idea rebuilt for [Omarchy](https://omarchy.org), with the same HUD and the same ghost, at home in the Omarchy bar and in whatever theme you run.
+這是 [InsaneArts/talkify-omarchy](https://github.com/InsaneArts/talkify-omarchy) 的 fork。原版的介面和操作都保留，差別在語音模型：原版用的 Parakeet 只懂 25 種歐洲語言，這裡換成聯發科的 [Breeze ASR 25](https://huggingface.co/MediaTek-Research/Breeze-ASR-25)，專門為台灣華語和中英夾雜訓練的 Whisper。辨識全程在你的電腦上跑，不連雲端、不用帳號。
 
-Speech is recognised on your machine by NVIDIA's [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): about 0.3 seconds for an 11-second sentence on the CPU, in 25 European languages. No cloud, no account, nothing leaves your computer.
+## 跟原版的差別
 
-## Install
+- **聽得懂中英夾雜**：「請幫我 review 這個 PR，然後把 deploy 的 script 改掉」會照你講的寫出來。
+- **中英之間自動留空白**：中文字之間不加空白，中文和英文、數字之間加一格。
+- **詞庫會提示給模型**：Vocabulary 裡的詞（Kubernetes、Hyprland、你的專案名）會先告訴模型，從源頭就拼對。預設已放一批工程師常用詞。
+- **中文口語指令**（前後各停頓一下再說）：
 
-In one line:
+  | 說 | 效果 |
+  |---|---|
+  | 逗號、句號、問號、驚嘆號、冒號、頓號 | 換成對應的全形標點 |
+  | 換行、新段落 | 換行 |
+  | 刪掉、劃掉 | 刪除前一句 |
+  | 送出 | 在終端機裡按下 Enter |
+
+- **詞庫修正支援中文**：`歐瑪奇 -> Omarchy` 這種修正在整句中文裡也比對得到。
+
+## 需求
+
+- Omarchy 4，Hyprland 0.56 以上。
+- 建議有 GPU。NVIDIA 裝 `cuda` 套件後會用 CUDA 編譯，RTX 3080 上辨識一句話約 0.4 秒，可以邊講邊顯示草稿。其他顯卡裝 `vulkan-headers` 和 `shaderc` 會用 Vulkan。兩者都沒有就用 CPU，能用但慢，這時即時草稿會自動停用。
+
+## 安裝
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/InsaneArts/talkify-omarchy/main/install.sh | bash
-```
-
-With Omarchy's package manager, from the AUR:
-
-```sh
-omarchy pkg aur add talkify-omarchy
-talkify-setup
-```
-
-From source:
-
-```sh
-git clone https://github.com/InsaneArts/talkify-omarchy.git
-cd talkify-omarchy
+git clone https://github.com/Unayung/omarchy-talkify-tw.git
+cd omarchy-talkify-tw
 ./install.sh
 ```
 
-The one-line install and `install.sh` build Talkify from source into `~/.local`, installing Rust first if it is missing. The package installs it for the whole system, and `talkify-setup` puts it in your bar. Either way, the first start downloads the Speech Model (670 MB) while the ghost in the bar fills up.
+`install.sh` 會從原始碼編譯到 `~/.local`，第一次要編 whisper.cpp，CUDA 版大約十分鐘。第一次啟動會下載語音模型（1 GB），下載期間 bar 上的小鬼會慢慢填滿。想指定後端可以用 `TALKIFY_GPU=cuda|vulkan|cpu ./install.sh`。
 
-Holding the key needs Talkify to read the keyboard, which means the `input` group:
+按住說話需要 Talkify 直接讀鍵盤，所以帳號要在 `input` 群組：
 
 ```sh
-sudo usermod -aG input "$USER"   # then log out and back in
+sudo usermod -aG input "$USER"   # 加完要登出再登入
 ```
 
-Until then, tap the key instead of holding it, with this bind in `~/.config/hypr/bindings.lua`:
+還沒加之前可以先用點按的方式，在 `~/.config/hypr/bindings.lua` 加一行：
 
 ```lua
 o.bind("SUPER + Super_R", "Dictation (Talkify)", "talkify tap", { release = true })
 ```
 
-Talkify needs Omarchy 4 with Hyprland 0.56 or newer.
+以下是原版的功能說明，在這個 fork 都照常運作。
 
 ## Appearance
 
@@ -89,7 +93,7 @@ Each app can have its own rules: whether to tidy the text, end with a period, wr
 - Click the ghost in the bar for settings, right-click it to start or finish a session.
 - `talkify paste-last` pastes your last dictation again, `talkify retry` decodes it again, and `talkify status` shows what Talkify is doing.
 
-To update, run the install again: the one-line install, `git pull && ./install.sh`, or your AUR helper for the package.
+To update, run `git pull && ./install.sh`.
 
 To remove Talkify:
 
@@ -97,7 +101,6 @@ To remove Talkify:
 systemctl --user disable --now talkify.service
 omarchy plugin remove tornikegomareli.talkify
 rm -f ~/.local/bin/talkify ~/.config/systemd/user/talkify.service   # after install.sh
-omarchy pkg drop talkify-omarchy                                     # after the package
 rm -rf ~/.config/talkify ~/.local/share/talkify                      # settings, history, the model
 ```
 
@@ -105,6 +108,7 @@ rm -rf ~/.config/talkify ~/.local/share/talkify                      # settings,
 
 ```sh
 cargo test                       # the pure rules in crates/talkify-core
+cargo build --release -p talkify --features cuda
 python3 tests/e2e.py             # a second daemon, real speech, every feature
 quickshell -p plugin/dev         # the HUD, playing scripted sessions
 ```
