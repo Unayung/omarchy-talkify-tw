@@ -6,7 +6,7 @@
   <img src=".github/assets/hero.jpg" width="100%" alt="Omarchy 桌面中央的 Talkify 膠囊" />
 </p>
 
-按住右 Super 鍵，把想打的字講出來，放開。文字會出現在你原本在打字的視窗：終端機、瀏覽器、編輯器、聊天室都可以。
+按住右 Alt，把想打的字講出來，放開。文字會出現在你原本在打字的視窗：終端機、瀏覽器、編輯器、聊天室都可以。
 
 這是 [InsaneArts/talkify-omarchy](https://github.com/InsaneArts/talkify-omarchy) 的 fork。原版的介面和操作都保留，差別在語音模型：原版用的 Parakeet 只懂 25 種歐洲語言，這裡換成聯發科的 [Breeze ASR 25](https://huggingface.co/MediaTek-Research/Breeze-ASR-25)，專門為台灣華語和中英夾雜訓練的 Whisper。辨識全程在你的電腦上跑，不連雲端、不用帳號。
 
@@ -41,16 +41,20 @@ cd omarchy-talkify-tw
 
 `install.sh` 會從原始碼編譯到 `~/.local`，第一次要編 whisper.cpp，CUDA 版大約十分鐘。第一次啟動會下載語音模型（1 GB），下載期間 bar 上的小鬼會慢慢填滿。想指定後端可以用 `TALKIFY_GPU=cuda|vulkan|cpu ./install.sh`。
 
-按住說話需要 Talkify 直接讀鍵盤，所以帳號要在 `input` 群組：
+## 用哪個鍵
+
+**建議用 Omarchy 內建的聽寫鍵**，鍵盤沒有右 Super 也能用。把 Talkify 設成 Omarchy 的聽寫後端：
+
+```sh
+omarchy-dictation-use talkify && hyprctl reload
+```
+
+之後按住右 Alt（或 F9）說話、放開出字，Super + Ctrl + X 切換免持模式。要換回原本的後端就執行 `omarchy-dictation-use voxtype`。
+
+原版的做法是 Talkify 自己讀鍵盤，預設鍵是右 Super，可以在設定的 Trigger 頁換成別的鍵。這需要帳號在 `input` 群組：
 
 ```sh
 sudo usermod -aG input "$USER"   # 加完要登出再登入
-```
-
-還沒加之前可以先用點按的方式，在 `~/.config/hypr/bindings.lua` 加一行：
-
-```lua
-o.bind("SUPER + Super_R", "Dictation (Talkify)", "talkify tap", { release = true })
 ```
 
 以下是原版的功能說明，在這個 fork 都照常運作。

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omarchy:summary=Record dictation using Talkify
+# omarchy:args=<start|stop|toggle>
+
+# Omarchy's dictation keys (hold Right Alt or F9, Super + Ctrl + X to toggle)
+# reach the backend chosen in Setup > Defaults > Dictation through an adapter
+# of this name. `omarchy-dictation-use talkify` chooses this one.
+case "${1:-}" in
+  start) talkify press ;;
+  stop) talkify release ;;
+  toggle) talkify toggle ;;
+  *) echo "Usage: omarchy dictation talkify <start|stop|toggle>" >&2; exit 1 ;;
+esac

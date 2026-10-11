@@ -73,6 +73,7 @@ cargo build --release --locked --manifest-path "$repo/Cargo.toml" -p talkify "${
 
 echo "Installing ~/.local/bin/talkify"
 install -Dm755 "$target/release/talkify" "$HOME/.local/bin/talkify"
+install -Dm755 "$repo/packaging/omarchy-dictation-talkify" "$HOME/.local/bin/omarchy-dictation-talkify"
 install -d "$data/sounds"
 install -m644 "$repo"/sounds/*.wav "$data/sounds/"
 
