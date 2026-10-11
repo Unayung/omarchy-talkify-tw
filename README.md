@@ -57,6 +57,14 @@ omarchy-dictation-use talkify && hyprctl reload
 sudo usermod -aG input "$USER"   # 加完要登出再登入
 ```
 
+**有裝 keyd 的話，右邊的修飾鍵預設收不到。** keyd 會把右 Ctrl、右 Alt、右 Super 都當成左邊那顆送出，Talkify 看到的永遠是 `KEY_LEFTCTRL`。在 `/etc/keyd/default.conf` 的 `[main]` 加一行讓它照原樣送出，再執行 `sudo keyd reload`：
+
+```ini
+rightcontrol = rightcontrol
+```
+
+想確認某顆鍵實際送出什麼，可以用 `sudo keyd monitor` 或 `evtest` 看。
+
 以下是原版的功能說明，在這個 fork 都照常運作。
 
 ## Appearance
