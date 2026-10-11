@@ -25,6 +25,14 @@ const SHORTEST: usize = 16_800;
 /// Mandarin, which is what Breeze was tuned on; English inside it is still
 /// written as English.
 const LANGUAGE: &str = "zh";
+/// The encoder hears in frames of 20 ms and by default works through thirty
+/// seconds of them however short the recording, which on a Mac is a second
+/// gone before the first word. It is given the recording's length and some
+/// to spare, and never less than half its full window: below that the model
+/// starts mishearing short English ("hello world" as "the low world").
+const SPARE_FRAMES: usize = 128;
+const FEWEST_FRAMES: usize = 768;
+const FRAME_SAMPLES: usize = 320;
 /// Recordings longer than this are decoded in pieces cut at pauses.
 const PIECE_SECONDS: usize = 60;
 
@@ -90,10 +98,10 @@ impl Speech {
     if samples.iter().all(|sample| sample.abs() < SILENCE_PEAK) {
       return Heard::default();
     }
-    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-      beam_size: 5,
-      patience: -1.0,
-    });
+    // One hypothesis at a time. A beam of five wrote the same words on every
+    // test recording, differing only in capitals and commas, and took half
+    // as long again to do it on Metal.
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some(LANGUAGE));
     params.set_n_threads(THREADS);
     // Each pass stands alone: text carried over from the one before is how
@@ -117,6 +125,11 @@ impl Speech {
     } else {
       samples
     };
+    let frames = (audio.len() / FRAME_SAMPLES + SPARE_FRAMES).max(FEWEST_FRAMES);
+    // Past the full window whisper.cpp slides it along the recording itself.
+    if frames < 1500 {
+      params.set_audio_ctx(frames as i32);
+    }
     if let Err(error) = self.0.full(params, audio) {
       tracing::error!("transcription failed: {error}");
       return Heard::default();

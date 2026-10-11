@@ -31,33 +31,36 @@ pub struct Piece<'a> {
 pub fn words(pieces: &[Piece], quiet: &[(f32, f32)]) -> Vec<Word> {
   let mut words: Vec<Word> = Vec::new();
   let mut pending: Vec<u8> = Vec::new();
-  let mut heard_until = 0.0;
-  let mut start = 0.0;
+  let mut heard_until: f32 = 0.0;
+  let mut start;
+  let mut since = 0.0;
   let mut spaced = true;
   for piece in pieces {
     if pending.is_empty() {
-      start = heard_until;
-      // The widest quiet stretch that is over before this piece is, and
-      // was not before the last one: the pause this piece was said after.
-      // The model's ends run a little late, so the word before is timed to
-      // where the quiet really began.
-      let pause = quiet
-        .iter()
-        .filter(|&&(_, to)| to > heard_until && to <= piece.end)
-        .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)));
-      if let Some(&(from, to)) = pause {
-        start = to;
-        if let Some(word) = words.last_mut() {
-          word.end = word.end.min(from).max(word.start);
-        }
-      }
+      since = heard_until;
     }
     heard_until = heard_until.max(piece.end);
     pending.extend_from_slice(piece.bytes);
-    // A character cut across tokens is whole once the rest arrives.
+    // A character cut across tokens is whole once the rest arrives, and only
+    // then is it timed: the model stamps the first half anywhere.
     let Ok(text) = std::str::from_utf8(&pending) else {
       continue;
     };
+    start = since;
+    // The widest quiet stretch that is over before this piece is, and was
+    // not before the last one: the pause this piece was said after. The
+    // model's ends run a little late, so the word before is timed to where
+    // the quiet really began.
+    let pause = quiet
+      .iter()
+      .filter(|&&(_, to)| to > since && to <= piece.end)
+      .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)));
+    if let Some(&(from, to)) = pause {
+      start = to;
+      if let Some(word) = words.last_mut() {
+        word.end = word.end.min(from).max(word.start);
+      }
+    }
     let mut paused = words.last().is_some_and(|word| start - word.end >= PAUSE);
     for c in text.chars() {
       if c.is_whitespace() {
@@ -193,6 +196,34 @@ mod tests {
     assert_eq!((words[1].text.as_str(), words[1].start), ("Send", 2.06));
     // "much" itself started before the quiet did.
     assert_eq!(words[0].start, 0.0);
+  }
+
+  #[test]
+  fn a_split_character_is_timed_by_its_second_half() {
+    // "逗" in two tokens, the first stamped inside the pause before it.
+    let bytes = "逗號".as_bytes();
+    let pieces = [
+      Piece {
+        bytes: "很好".as_bytes(),
+        end: 2.24,
+      },
+      Piece {
+        bytes: &bytes[..2],
+        end: 2.28,
+      },
+      Piece {
+        bytes: &bytes[2..3],
+        end: 3.72,
+      },
+      Piece {
+        bytes: &bytes[3..],
+        end: 4.08,
+      },
+    ];
+    let words = words(&pieces, &[(1.82, 3.58)]);
+    let texts: Vec<&str> = words.iter().map(|word| word.text.as_str()).collect();
+    assert_eq!(texts, ["很好", "逗號"]);
+    assert_eq!((words[0].end, words[1].start), (1.82, 3.58));
   }
 
   #[test]
