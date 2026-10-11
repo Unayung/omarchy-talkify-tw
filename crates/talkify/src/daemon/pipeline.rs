@@ -66,6 +66,23 @@ impl Daemon {
     rules.format_chunk(&text)
   }
 
+  /// What the Speech Model is told to expect: the words the Tidy pass
+  /// listens for, then the Vocabulary's.
+  pub(super) fn hints(&self) -> String {
+    let mut hints = String::new();
+    if self.config.tidy.enabled {
+      hints.push_str(talkify_core::tidy::HINTS);
+    }
+    if self.config.vocab.enabled {
+      let words = self.vocab.vocabulary.hints();
+      if !hints.is_empty() && !words.is_empty() {
+        hints.push_str(", ");
+      }
+      hints.push_str(&words);
+    }
+    hints
+  }
+
   fn apply_vocabulary(&mut self, text: &str) -> String {
     if self.config.vocab.enabled && !self.vocab.vocabulary.is_empty() {
       let applied = self.vocab.vocabulary.apply(text, self.config.vocab.fuzzy);
@@ -116,7 +133,10 @@ impl Daemon {
   }
 
   pub(super) fn maybe_request_live_draft(&mut self, now: Instant) {
-    let wanted = self.config.engine.live_draft || self.live.is_some();
+    // A Speech Model on the CPU takes seconds a pass: its drafts arrive
+    // after the words they show, and the final pass queues behind them.
+    let live_draft = self.config.engine.live_draft && self.slow_live_passes < 2;
+    let wanted = live_draft || self.live.is_some();
     if !wanted || self.live_in_flight {
       return;
     }
@@ -135,11 +155,19 @@ impl Daemon {
       id: self.session_id,
       offset,
       samples: samples[offset..].to_vec(),
+      hints: self.hints(),
     });
   }
 
   pub(super) fn live_pass(&mut self, pass: Pass) {
     self.live_in_flight = false;
+    // Two slow passes in a row and live drafts stop until the daemon
+    // restarts; one alone is the GPU warming up.
+    self.slow_live_passes = if self.last_live_at.elapsed() > super::LIVE_TOO_SLOW {
+      self.slow_live_passes + 1
+    } else {
+      0
+    };
     if !matches!(self.machine.state(), State::Recording(_))
       || self.warned_silent && !self.heard_signal
     {
@@ -210,8 +238,9 @@ impl Daemon {
       let mut rest = self.polish(&rest, &rules);
       let live = self.live.as_ref().expect("checked above");
       let inserted = live.committer.inserted().to_string();
-      if rules.trailing_space && !send && !inserted.is_empty() {
-        rest.push(' ');
+      if !send && !inserted.is_empty() {
+        let last = if rest.is_empty() { &inserted } else { &rest };
+        rest.push_str(rules.trailing(last));
       }
       if !rest.is_empty() {
         live.inserter.chunk(rest);
@@ -258,8 +287,8 @@ impl Daemon {
     let id = self.session_id;
     let tx = self.tx.clone();
     let mut insertion = landing.text.clone();
-    if rules.trailing_space && !landing.send {
-      insertion.push(' ');
+    if !landing.send {
+      insertion.push_str(rules.trailing(&landing.text));
     }
     let enter = landing.send;
     let target = self.target.clone();
@@ -456,7 +485,7 @@ impl Daemon {
     let method = Method::from_config(&self.config.insertion.method);
     std::thread::spawn(move || {
       let mut insertion = text.clone();
-      if trailing_space {
+      if trailing_space && !text.ends_with(talkify_core::live::is_wide) {
         insertion.push(' ');
       }
       let outcome = insert::insert(&insertion, None, Destination::Insert, method, false);
@@ -496,6 +525,7 @@ impl Daemon {
       id: self.session_id,
       offset: 0,
       samples: audio,
+      hints: self.hints(),
     });
     Ok(())
   }

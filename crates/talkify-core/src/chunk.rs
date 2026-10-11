@@ -1,6 +1,6 @@
 //! Splits a long recording into pieces the Speech Model handles well.
 //!
-//! Parakeet decodes a minute of speech in well under a second, but its
+//! The Speech Model decodes a minute of speech quickly, but its
 //! memory grows with the length of what it sees at once, so a long latched
 //! session is decoded in pieces. Each cut lands at the quietest moment near
 //! the target length, so it falls between words rather than through one.

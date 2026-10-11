@@ -26,8 +26,10 @@ as written; everything Apple underneath them is replaced.
 - `plugin/` is an Omarchy shell plugin (Quickshell QML) with three entry
   points: a service that runs `talkify watch`, the bar widget (the ghost and
   the settings menu), and the HUD
-- The Speech Model is NVIDIA Parakeet TDT 0.6B v3, int8 ONNX, run on the CPU
-  through `parakeet-rs`. It is loaded once and kept warm
+- The Speech Model is MediaTek Research's Breeze ASR 25, a Whisper large-v2
+  tuned for Taiwanese Mandarin with English mixed in, run by whisper.cpp
+  through `whisper-rs` on the GPU (CUDA or Vulkan, chosen at build time). It
+  is loaded once and kept warm
 
 ## Language
 
@@ -58,7 +60,7 @@ recording so far. It is a preview; the final pass decides what is inserted.
 _Avoid_: Partial result, interim transcript
 
 **Speech Model**:
-The on-device model that turns speech into text: Parakeet TDT 0.6B v3.
+The on-device model that turns speech into text: Breeze ASR 25.
 _Avoid_: Engine, Whisper, the AI
 
 **HUD**:
@@ -97,7 +99,10 @@ _Avoid_: AI cleanup, autocorrect, formatting
 **Vocabulary**:
 The user's words file: words to prefer (matched by sound and spelling),
 corrections (`heard -> written`) and snippets (`trigger => expansion`),
-applied after decoding because Parakeet takes no hints.
+applied after decoding. The words to prefer are also given to the Speech
+Model as hints, so it spells them right as it hears them. A correction or
+snippet heard in Chinese matches anywhere in a run of Chinese, which has no
+spaces to make words of.
 _Avoid_: Dictionary, custom words, glossary
 
 **Teach**:

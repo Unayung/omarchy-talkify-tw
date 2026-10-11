@@ -39,6 +39,30 @@ pub fn trailing_silence(samples: &[f32]) -> f32 {
   (quiet * window).min(samples.len()) as f32 / 16_000.0
 }
 
+/// The quiet stretches of a 16 kHz recording at least a tenth of a second
+/// long, as (start, end) in seconds. These are the speaker's pauses.
+pub fn quiet(samples: &[f32]) -> Vec<(f32, f32)> {
+  let window = 16_000 / 50;
+  let mut stretches = Vec::new();
+  let mut since: Option<usize> = None;
+  let levels = samples
+    .chunks(window)
+    .map(|chunk| normalized_level(chunk) < SILENCE_LEVEL);
+  for (index, silent) in levels.chain(std::iter::once(false)).enumerate() {
+    match (since, silent) {
+      (None, true) => since = Some(index),
+      (Some(start), false) => {
+        if index - start >= 5 {
+          stretches.push((start as f32 / 50.0, index as f32 / 50.0));
+        }
+        since = None;
+      }
+      _ => {}
+    }
+  }
+  stretches
+}
+
 #[derive(Debug)]
 pub struct MicWatchdog {
   armed_at: Instant,

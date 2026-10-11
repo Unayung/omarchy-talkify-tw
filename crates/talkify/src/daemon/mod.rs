@@ -48,6 +48,8 @@ use crate::paths;
 
 /// How often a live draft may run while speaking.
 const LIVE_EVERY: Duration = Duration::from_millis(600);
+/// A live draft that takes longer than this shows words already left behind.
+const LIVE_TOO_SLOW: Duration = Duration::from_millis(1500);
 /// A live draft waits for at least this much new audio.
 const LIVE_MIN_NEW_SAMPLES: usize = 16_000 / 2;
 /// A message on the HUD stays this long.
@@ -141,7 +143,7 @@ pub fn run() -> anyhow::Result<()> {
   let (tx, rx) = crossbeam_channel::unbounded();
 
   let trigger_source = keyboard::start(tx.clone());
-  let model = models::find(&config.engine.model).unwrap_or(&models::PARAKEET_V3_INT8);
+  let model = models::find(&config.engine.model).unwrap_or(&models::BREEZE_ASR_25);
   let engine = Engine::spawn(model, tx.clone());
   let audio = Audio::spawn(tx.clone());
   {
@@ -200,6 +202,7 @@ pub fn run() -> anyhow::Result<()> {
     no_speech_deadline: None,
     message_until: None,
     live_in_flight: false,
+    slow_live_passes: 0,
     last_live_at: Instant::now(),
     last_live_len: 0,
     played_begin: false,
@@ -251,7 +254,7 @@ pub fn transcribe_file(path: &str) -> anyhow::Result<()> {
   let mut samples = Vec::new();
   talkify_core::resample::Resampler::new(spec.sample_rate, spec.channels)
     .process(&interleaved, &mut samples);
-  let model = models::find(&store::load_config().engine.model).unwrap_or(&models::PARAKEET_V3_INT8);
+  let model = models::find(&store::load_config().engine.model).unwrap_or(&models::BREEZE_ASR_25);
   if !model.is_complete() {
     anyhow::bail!("the Speech Model is not downloaded yet (talkify load-model)");
   }
@@ -327,6 +330,8 @@ struct Daemon {
   no_speech_deadline: Option<Instant>,
   message_until: Option<Instant>,
   live_in_flight: bool,
+  /// Live passes in a row that took too long to be worth showing.
+  slow_live_passes: u8,
   last_live_at: Instant,
   last_live_len: usize,
   played_begin: bool,
@@ -406,6 +411,7 @@ impl Daemon {
           id,
           offset,
           samples: samples[offset..].to_vec(),
+          hints: self.hints(),
         });
         self.keep_audio(samples);
       }

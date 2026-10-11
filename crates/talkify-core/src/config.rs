@@ -206,7 +206,7 @@ impl Default for TidyConfig {
       stutters: true,
       spoken_punctuation: true,
       scratch: true,
-      send_phrases: "send it, press enter".into(),
+      send_phrases: "send it, press enter, 送出, 送出去".into(),
     }
   }
 }
@@ -266,7 +266,7 @@ pub fn default_apps() -> std::collections::BTreeMap<String, AppRule> {
 impl Default for EngineConfig {
   fn default() -> Self {
     Self {
-      model: "parakeet-tdt-0.6b-v3-int8".into(),
+      model: "breeze-asr-25-q5_k".into(),
       live_draft: true,
       no_speech_timeout_ms: 0,
     }

@@ -21,8 +21,12 @@ here differs from it, the difference is deliberate and says why in a comment.
   rule into a pure type and test that rather than mocking the world.
 - The daemon's loop owns all session state. Threads report back as `Msg`s and
   carry the session id; never share session state across threads.
-- One third-party model runtime: `parakeet-rs` (ONNX Runtime via `ort`).
-  Adding a second speech engine is a decision to raise, not to make.
+- One third-party model runtime: `whisper-rs` (whisper.cpp). This fork
+  replaced upstream's `parakeet-rs`, which has no Chinese. Adding a second
+  speech engine is a decision to raise, not to make.
+- Text is Taiwanese Mandarin with English mixed in. Anything that joins,
+  splits or counts words goes through `live::gap`, `live::join` and
+  `pieces::words`; never join with a bare space.
 - Never edit `/usr/share/omarchy`. User config changes (Hyprland binds, the
   Omarchy menu) are documented in the README, not done by `install.sh`.
 

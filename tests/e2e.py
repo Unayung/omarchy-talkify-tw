@@ -4,14 +4,16 @@
 The daemon runs beside the user's, isolated by TALKIFY_SOCKET,
 TALKIFY_CONFIG_DIR and TALKIFY_DATA_DIR, with TALKIFY_DRY_INSERT=1 so nothing
 touches the clipboard or presses a key. Its microphone is a PipeWire null
-sink; synthesized speech (espeak-ng) is played into that sink in real time,
-so the audio path, the Speech Model and the whole text pipeline are the real
-ones.
+sink; synthesized speech is played into that sink in real time, so the audio
+path, the Speech Model and the whole text pipeline are the real ones. English
+is espeak-ng. Mandarin is a Taiwanese neural voice from edge-tts, fetched once
+and kept in ~/.cache/talkify-e2e; without edge-tts those tests are skipped.
 
     python3 tests/e2e.py              all tests
     python3 tests/e2e.py tidy vocab   only those
 """
 
+import hashlib
 import json
 import os
 import queue
@@ -54,7 +56,7 @@ class Daemon:
       "TALKIFY_TEST_SELECTION_FILE": str(self.selection_file),
       "TALKIFY_TEST_WINDOW_FILE": str(self.window_file),
       "TALKIFY_TEST_MPRIS_PREFIX": "org.mpris.MediaPlayer2.talkify_e2e",
-      "TALKIFY_LOG": "talkify=debug",
+      "TALKIFY_LOG": os.environ.get("TALKIFY_LOG", "talkify=debug"),
       "PIPEWIRE_PROPS": '{ target.object = "%s" stream.capture.sink = true }' % SINK,
     })
     env.update(extra_env or {})
@@ -145,6 +147,38 @@ def play(clip: Path):
 def say(root: Path, name: str, ssml: str, speed=150) -> Path:
   out = root / f"{name}.wav"
   subprocess.run(["espeak-ng", "-m", "-s", str(speed), "-w", str(out), f"<speak>{ssml}</speak>"], check=True)
+  return out
+
+
+VOICE = "zh-TW-HsiaoChenNeural"
+CLIPS = Path.home() / ".cache" / "talkify-e2e"
+
+
+class Skipped(Exception):
+  pass
+
+
+def speak(root: Path, name: str, *parts, voice=VOICE) -> Path:
+  """A neural voice, Mandarin by default: each string is spoken, each number
+  is a pause in ms."""
+  if not shutil.which("edge-tts"):
+    raise Skipped("edge-tts is not installed")
+  CLIPS.mkdir(parents=True, exist_ok=True)
+  inputs, labels = [], []
+  for part in parts:
+    if isinstance(part, int):
+      inputs += ["-f", "lavfi", "-t", str(part / 1000), "-i", "anullsrc=r=16000:cl=mono"]
+    else:
+      clip = CLIPS / (hashlib.sha1(f"{voice}:{part}".encode()).hexdigest() + ".mp3")
+      if not clip.exists():
+        subprocess.run(["edge-tts", "--voice", voice, "--text", part, "--write-media", str(clip)],
+                       check=True, capture_output=True)
+      inputs += ["-i", str(clip)]
+    labels.append(f"[{len(labels)}]")
+  out = root / f"{name}.wav"
+  subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *inputs, "-filter_complex",
+                  f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1", "-ar", "16000", "-ac", "1", str(out)],
+                 check=True)
   return out
 
 
@@ -268,16 +302,17 @@ def tidy(d, root):
 def spoken_punctuation(d, root):
   clip = say(root, "punct", f"Hello {pause()} comma {pause()} world {pause()} question mark")
   result, _ = d.dictate(clip)
-  assert result["text"].startswith("Hello,"), result
+  # Whisper writes a lone greeting in lower case as often as not.
+  assert result["text"].lower().startswith("hello,"), result
   assert result["text"].rstrip().endswith("?"), result
   assert "comma" not in result["text"].lower(), result
 
 
 @test
 def scratch_that(d, root):
-  # espeak swallows the "th" of "scratch that" (the model hears "scratch
-  # at"); "delete that" is the same rule and survives the synthetic voice.
-  clip = say(root, "scratch", f"Lunch is at noon {pause()} delete that {pause()} lunch is at one.", speed=130)
+  # espeak's "scratch that" and "delete that" are both too slurred for the
+  # Speech Model, so this one is a neural voice.
+  clip = speak(root, "scratch", "Lunch is at noon.", 700, "Scratch that.", 700, "Lunch is at one.", voice="en-US-AriaNeural")
   result, _ = d.dictate(clip)
   text = normalized(result["text"])
   assert "noon" not in text and "delete" not in text, result
@@ -319,6 +354,52 @@ def spoken_send(d, root):
     assert "thank you" in normalized(result["text"]) and "send" not in normalized(result["text"]), result
   finally:
     d.command({"cmd": "config-set", "key": "apps.org.talkify.Chat.send", "value": ""})
+    d.window_file.write_text("org.talkify.Editor")
+
+
+@test
+def mandarin_with_english_mixed_in(d, root):
+  result, _ = d.dictate(speak(root, "mixed", "請幫我 review 這個 PR，然後把 deploy 的 script 改成用 Docker Compose 跑。"))
+  text = result["text"]
+  assert "請幫我 review 這個" in text, result
+  assert " deploy 的 script 改成用" in text, result
+  result, _ = d.dictate(speak(root, "plain", "今天下午三點要跟客戶開會，記得先把報告準備好。"))
+  assert " " not in result["text"].strip(), result
+  assert "客戶開會" in result["text"] and "報告準備好" in result["text"], result
+
+
+@test
+def mandarin_spoken_punctuation_and_scratch(d, root):
+  result, _ = d.dictate(speak(root, "zh-punct", "今天天氣很好", 700, "逗號", 700, "我們去散步", 700, "句號"))
+  assert result["text"].strip() == "今天天氣很好，我們去散步。", result
+  result, _ = d.dictate(speak(root, "zh-scratch", "中午十二點開會", 800, "刪掉", 800, "下午一點開會"))
+  # The Speech Model writes the hour as a numeral or a character.
+  assert "中午" not in result["text"] and "刪掉" not in result["text"], result
+  assert result["text"].startswith("下午") and result["text"].endswith("點開會"), result
+
+
+@test
+def mandarin_vocabulary(d, root):
+  # A preferred word is a hint to the Speech Model and a spelling to keep; a
+  # correction heard in Chinese matches inside a run of it.
+  assert d.command({"cmd": "vocab-add", "line": "Kubernetes"}) == "ok"
+  assert d.command({"cmd": "vocab-add", "line": "報告 -> 簡報"}) == "ok"
+  result, _ = d.dictate(speak(root, "zh-tech", "我剛剛發現 Kubernetes 的 pod 一直 crash，要查一下 log。"))
+  assert "Kubernetes" in result["text"], result
+  result, _ = d.dictate(speak(root, "zh-vocab", "記得先把報告準備好"))
+  assert "簡報準備好" in result["text"] and "報告" not in result["text"], result
+
+
+@test
+def mandarin_spoken_send(d, root):
+  d.window_file.write_text("foot terminal")
+  try:
+    result, _ = d.dictate(speak(root, "zh-send", "跑一下測試然後修掉失敗的部分", 800, "送出"))
+    assert result["sent"] and result["rule"] == "terminal", result
+    assert "送出" not in result["text"] and "失敗的部分" in result["text"], result
+    result, _ = d.dictate(speak(root, "zh-nosend", "這個訊息先不要送出去給客戶"))
+    assert not result["sent"] and "送出" in result["text"], result
+  finally:
     d.window_file.write_text("org.talkify.Editor")
 
 
@@ -462,6 +543,8 @@ def main():
       try:
         fn(daemon, root)
         print(f"  ok    {fn.__name__} ({time.monotonic() - started:.1f}s)")
+      except Skipped as reason:
+        print(f"  skip  {fn.__name__}: {reason}")
       except Exception as error:
         failures += 1
         print(f"  FAIL  {fn.__name__}: {error!r}")

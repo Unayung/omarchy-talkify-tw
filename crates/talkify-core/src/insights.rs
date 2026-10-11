@@ -4,6 +4,7 @@
 //! Only aggregates are kept: per day, words, speaking time and sessions.
 //! Never text, never app names. Weeks start on Monday.
 
+use crate::live::is_wide;
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 
@@ -77,12 +78,15 @@ pub struct HeatDay {
 }
 
 /// Words in a text: runs of characters with a letter or digit, so
-/// punctuation and whitespace never count.
+/// punctuation and whitespace never count. Chinese has no spaces to split
+/// on, so each of its characters counts as a word.
 pub fn word_count(text: &str) -> u64 {
+  let wide = |c: char| is_wide(c) && c.is_alphanumeric();
   text
-    .split(|c: char| c.is_whitespace())
+    .split(|c: char| c.is_whitespace() || wide(c))
     .filter(|token| token.chars().any(char::is_alphanumeric))
     .count() as u64
+    + text.chars().filter(|c| wide(*c)).count() as u64
 }
 
 fn parse(day: &str) -> Option<NaiveDate> {
@@ -330,6 +334,7 @@ mod tests {
     assert_eq!(word_count("  Hello, world. Talkify works!  "), 4);
     assert_eq!(word_count(" \n\t "), 0);
     assert_eq!(word_count("well — fine"), 2);
+    assert_eq!(word_count("請幫我 review 這個 PR。"), 7);
   }
 
   #[test]

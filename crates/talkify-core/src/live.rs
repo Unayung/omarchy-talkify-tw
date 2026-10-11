@@ -55,6 +55,39 @@ pub struct Commit {
   pub cut: usize,
 }
 
+/// Chinese, Japanese and Korean characters and their full-width punctuation,
+/// which are written without spaces between them.
+pub fn is_wide(c: char) -> bool {
+  matches!(c as u32, 0x2E80..=0x9FFF | 0xAC00..=0xD7AF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF | 0x20000..=0x2FFFF)
+}
+
+/// What goes between two words when they are joined: a space, except between
+/// two wide characters and beside wide punctuation. "請幫我" + "review" keeps
+/// its space, "今天" + "天氣" and "好，" + "OK" get none.
+pub fn gap(before: &str, after: &str) -> &'static str {
+  match (before.chars().next_back(), after.chars().next()) {
+    (Some(a), Some(b)) => {
+      let punctuation = |c: char| is_wide(c) && !c.is_alphanumeric();
+      if a == '\n' || (is_wide(a) && is_wide(b)) || punctuation(a) || punctuation(b) {
+        ""
+      } else {
+        " "
+      }
+    }
+    _ => "",
+  }
+}
+
+/// Words joined into text, spaced by `gap`.
+pub fn join<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
+  let mut out = String::new();
+  for word in words {
+    out.push_str(gap(&out, word));
+    out.push_str(word);
+  }
+  out
+}
+
 /// Standalone punctuation tokens ("." after a word) belong to that word, so
 /// agreement and commits work on whole words. The word keeps its own end:
 /// the model stamps a punctuation token where it emits it, often after the
@@ -96,7 +129,9 @@ fn agreed_prefix(previous: &[Word], current: &[Word]) -> usize {
 }
 
 fn ends_sentence(text: &str) -> bool {
-  text.trim_end().ends_with(['.', '!', '?', '…'])
+  text
+    .trim_end()
+    .ends_with(['.', '!', '?', '…', '。', '！', '？'])
 }
 
 #[derive(Debug)]
@@ -209,16 +244,8 @@ impl LiveCommitter {
   pub fn display(&self, words: &[Word]) -> String {
     let words = merge_punctuation(words);
     let start = self.resume_index(&words);
-    let tail = words[start..]
-      .iter()
-      .map(|word| word.text.as_str())
-      .collect::<Vec<_>>()
-      .join(" ");
-    match (self.inserted.is_empty(), tail.is_empty()) {
-      (true, _) => tail,
-      (false, true) => self.inserted.clone(),
-      (false, false) => format!("{} {tail}", self.inserted),
-    }
+    let tail = join(words[start..].iter().map(|word| word.text.as_str()));
+    format!("{}{}{tail}", self.inserted, gap(&self.inserted, &tail))
   }
 
   /// Where the uncommitted words start in a new hypothesis. Usually right
@@ -331,6 +358,18 @@ mod tests {
       .iter()
       .map(|(text, start, end)| Word::new(text, *start, *end))
       .collect()
+  }
+
+  #[test]
+  fn wide_characters_join_without_spaces_and_keep_them_beside_latin() {
+    assert_eq!(join(["今天", "天氣", "很好"]), "今天天氣很好");
+    assert_eq!(
+      join(["請幫我", "review", "這個", "PR"]),
+      "請幫我 review 這個 PR"
+    );
+    assert_eq!(join(["好，", "OK", "了。", "Done"]), "好，OK 了。Done");
+    assert_eq!(join(["run", "the", "tests"]), "run the tests");
+    assert_eq!(join(["first\n", "second"]), "first\nsecond");
   }
 
   #[test]

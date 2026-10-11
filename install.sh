@@ -7,11 +7,11 @@
 # it, so it fetches the source into ~/.local/share/talkify/source (or updates
 # it there) and runs the install.sh it finds in it:
 #
-#   curl -fsSL https://raw.githubusercontent.com/InsaneArts/talkify-omarchy/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Unayung/omarchy-talkify-tw/main/install.sh | bash
 set -euo pipefail
 
 # TALKIFY_SOURCE fetches from somewhere else, such as a fork.
-source_url="${TALKIFY_SOURCE:-https://github.com/InsaneArts/talkify-omarchy.git}"
+source_url="${TALKIFY_SOURCE:-https://github.com/Unayung/omarchy-talkify-tw.git}"
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
 if [[ ! -f "$here/Cargo.toml" || ! -f "$here/plugin/manifest.json" ]]; then
@@ -50,8 +50,26 @@ if (( ${#needs[@]} > 0 )); then
   fi
 fi
 
-echo "Building the daemon"
-cargo build --release --locked --manifest-path "$repo/Cargo.toml" -p talkify
+# The Speech Model wants a GPU: CUDA on NVIDIA when its toolkit is installed,
+# Vulkan anywhere its headers are, and the CPU, slowly, when there is neither.
+# TALKIFY_GPU=cuda|vulkan|cpu chooses by hand.
+gpu="${TALKIFY_GPU:-}"
+if [[ -z $gpu ]]; then
+  if command -v nvcc >/dev/null; then
+    gpu=cuda
+  elif [[ -f /usr/include/vulkan/vulkan.h ]] && command -v glslc >/dev/null; then
+    gpu=vulkan
+  else
+    gpu=cpu
+    echo "No CUDA toolkit or Vulkan headers found: the Speech Model will run on the CPU."
+    echo "For a GPU build install cuda (NVIDIA) or vulkan-headers and shaderc, then run this again."
+  fi
+fi
+features=()
+[[ $gpu == cpu ]] || features=(--features "$gpu")
+
+echo "Building the daemon ($gpu)"
+cargo build --release --locked --manifest-path "$repo/Cargo.toml" -p talkify "${features[@]}"
 
 echo "Installing ~/.local/bin/talkify"
 install -Dm755 "$target/release/talkify" "$HOME/.local/bin/talkify"

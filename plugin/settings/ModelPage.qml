@@ -12,7 +12,7 @@ SettingsPage {
 
   Caption {
     ctx: page.ctx
-    text: "NVIDIA Parakeet TDT 0.6B v3, int8, running on this machine's CPU. It never leaves this computer. It understands 25 European languages and finds the one you speak by itself."
+    text: "MediaTek Research Breeze ASR 25, a Whisper tuned for Taiwanese Mandarin with English mixed in, running on this machine. It never leaves this computer. The words in your Vocabulary are given to it as hints."
   }
 
   Heading {
@@ -29,7 +29,7 @@ SettingsPage {
       switch (page.svc.engineStatus) {
       case "ready": return "Loaded and warm."
       case "loading": return "Loading…"
-      case "downloading": return "Downloading, " + Math.round(page.svc.engineProgress * 100) + "% of 670 MB."
+      case "downloading": return "Downloading, " + Math.round(page.svc.engineProgress * 100) + "% of 1 GB."
       default: return page.svc.engineDetail || "Not available."
       }
     }

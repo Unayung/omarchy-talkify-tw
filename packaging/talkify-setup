@@ -57,7 +57,7 @@ fi
 
 cat <<'NEXT'
 
-Talkify is installed. The first start downloads the Speech Model (670 MB);
+Talkify is installed. The first start downloads the Speech Model (1 GB);
 the ghost in the bar fills up while it does.
 
 To hold Right Super to talk, Talkify reads the keyboard, which needs the

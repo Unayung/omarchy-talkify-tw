@@ -1,7 +1,7 @@
 //! The Speech Model on disk: which files make it up, whether they are all
 //! there, and fetching the missing ones.
 //!
-//! Hugging Face downloads of the 650 MB encoder are known to stall partway,
+//! Hugging Face downloads of a gigabyte are known to stall partway,
 //! so curl resumes (`-C -`), gives up on a stalled connection after 30
 //! seconds, and the whole thing retries.
 
@@ -25,32 +25,27 @@ pub struct Model {
   pub files: &'static [ModelFile],
 }
 
-pub const PARAKEET_V3_INT8: Model = Model {
-  id: "parakeet-tdt-0.6b-v3-int8",
-  source: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main",
-  files: &[
-    ModelFile {
-      name: "encoder-model.int8.onnx",
-      size: 652_183_999,
-    },
-    ModelFile {
-      name: "decoder_joint-model.int8.onnx",
-      size: 18_202_004,
-    },
-    ModelFile {
-      name: "vocab.txt",
-      size: 93_939,
-    },
-  ],
+pub const BREEZE_ASR_25: Model = Model {
+  id: "breeze-asr-25-q5_k",
+  source: "https://huggingface.co/alan314159/Breeze-ASR-25-whispercpp/resolve/main",
+  files: &[ModelFile {
+    name: "ggml-model-q5_k.bin",
+    size: 1_080_732_108,
+  }],
 };
 
 pub fn find(id: &str) -> Option<&'static Model> {
-  [&PARAKEET_V3_INT8].into_iter().find(|model| model.id == id)
+  [&BREEZE_ASR_25].into_iter().find(|model| model.id == id)
 }
 
 impl Model {
   pub fn dir(&self) -> PathBuf {
     paths::models_dir().join(self.id)
+  }
+
+  /// The weights: a whisper.cpp model is one file.
+  pub fn weights(&self) -> PathBuf {
+    self.dir().join(self.files[0].name)
   }
 
   pub fn total_size(&self) -> u64 {

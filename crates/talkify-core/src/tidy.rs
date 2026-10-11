@@ -11,11 +11,13 @@
 //! it, so the HUD can show a filler fading or a scratched phrase struck
 //! through before the text lands.
 
-use crate::live::{Word, merge_punctuation};
+use crate::live::{Word, gap, join, merge_punctuation};
 use crate::protocol::{MarkKind, TextMark, utf16_len};
 
 /// Fillers nobody means. Removed wherever they appear.
-const ALWAYS_FILLERS: &[&str] = &["uh", "uhm", "umm", "uhh", "erm", "hmm", "mhm", "mm"];
+const ALWAYS_FILLERS: &[&str] = &[
+  "uh", "uhm", "umm", "uhh", "erm", "hmm", "mhm", "mm", "嗯", "呃", "痾",
+];
 /// Fillers that are also words somewhere ("um" is "one" in Portuguese, "er"
 /// is "he" in German): removed only when a pause or the model's own comma
 /// sets them apart.
@@ -39,17 +41,36 @@ const SPOKEN_MARKS: &[(&[&str], &str)] = &[
   (&["comma"], ","),
   (&["colon"], ":"),
   (&["semicolon"], ";"),
+  // Chinese is cut into words at pauses, so a mark said on its own between
+  // two pauses is one word.
+  (&["新段落"], "\n\n"),
+  (&["換行"], "\n"),
+  (&["逗號"], "，"),
+  (&["句號"], "。"),
+  (&["問號"], "？"),
+  (&["驚嘆號"], "！"),
+  (&["冒號"], "："),
+  (&["分號"], "；"),
+  (&["頓號"], "、"),
 ];
 
 const SCRATCH: &[&[&str]] = &[
   &["scratch", "that"],
   &["delete", "that"],
   &["strike", "that"],
+  &["刪掉"],
+  &["劃掉"],
+  &["刪掉這句"],
 ];
 /// "that" said quickly or with an accent often comes back as "at". Between
 /// two pauses "delete at" means nothing else, so these count too, but only
 /// set apart on both sides.
 const SCRATCH_MISHEARD: &[&[&str]] = &[&["scratch", "at"], &["delete", "at"], &["strike", "at"]];
+
+/// The Chinese words the pass listens for, for the Speech Model to expect:
+/// said alone between two pauses, a short one is easily heard as another
+/// ("逗號" as "都好").
+pub const HINTS: &str = "逗號, 句號, 問號, 驚嘆號, 冒號, 頓號, 換行, 新段落, 刪掉, 送出";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TidyOptions {
@@ -138,9 +159,7 @@ impl Tidied {
     let mut text = String::new();
     let mut marks: Vec<TextMark> = Vec::new();
     for (word, fate) in self.words.iter().zip(&self.fates) {
-      if !text.is_empty() {
-        text.push(' ');
-      }
+      text.push_str(gap(&text, &word.text));
       let start = utf16_len(&text);
       text.push_str(&word.text);
       let kind = match fate {
@@ -192,7 +211,9 @@ fn strip_trailing_punctuation(word: &str) -> &str {
 }
 
 fn ends_sentence(word: &str) -> bool {
-  word.trim_end().ends_with(['.', '!', '?', '…'])
+  word
+    .trim_end()
+    .ends_with(['.', '!', '?', '…', '。', '！', '？'])
 }
 
 pub fn tidy(raw: &[Word], options: &TidyOptions) -> Tidied {
@@ -350,14 +371,7 @@ pub fn tidy(raw: &[Word], options: &TidyOptions) -> Tidied {
 /// Words joined for the text: a space between words, none after a line
 /// break.
 pub fn join_words(words: &[Word]) -> String {
-  let mut out = String::new();
-  for word in words {
-    if !out.is_empty() && !out.ends_with('\n') {
-      out.push(' ');
-    }
-    out.push_str(&word.text);
-  }
-  out
+  join(words.iter().map(|word| word.text.as_str()))
 }
 
 /// The kept words, with spoken punctuation turned into marks and the
@@ -539,6 +553,23 @@ mod tests {
     );
     assert!(!mid.send);
     assert_eq!(mid.text, "send it to Anna please");
+  }
+
+  #[test]
+  fn chinese_marks_scratches_and_the_send_phrase_work_between_pauses() {
+    assert_eq!(tidied("你好 | 逗號 | 世界 | 句號"), "你好，世界。");
+    assert_eq!(tidied("第一行 | 換行 | 第二行"), "第一行\n第二行");
+    assert_eq!(
+      tidied("嗯 | 中午十二點開會 | 刪掉 | 下午一點開會"),
+      "下午一點開會"
+    );
+    // Run into its neighbours it is just the word.
+    assert_eq!(tidied("這個逗號要拿掉"), "這個逗號要拿掉");
+    let result = tidy(
+      &said("跑一下測試 | 送出"),
+      &TidyOptions::all("send it, 送出"),
+    );
+    assert_eq!((result.text.as_str(), result.send), ("跑一下測試", true));
   }
 
   #[test]

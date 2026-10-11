@@ -38,7 +38,7 @@ Item {
 
   property var config: ({
     trigger: { key: "KEY_RIGHTMETA", chord_guard_ms: 150, preroll: true },
-    engine: { model: "parakeet-tdt-0.6b-v3-int8", live_draft: true, no_speech_timeout_ms: 0 },
+    engine: { model: "breeze-asr-25-q5_k", live_draft: true, no_speech_timeout_ms: 0 },
     insertion: { destination: "insert", method: "paste", live: false, live_pause_ms: 600, trailing_space: true },
     tidy: { enabled: true, fillers: true, stutters: true, spoken_punctuation: true, scratch: true, send_phrases: "send it, press enter" },
     vocab: { enabled: true, fuzzy: true },

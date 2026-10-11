@@ -4,6 +4,7 @@
 //! the terminal rule, which wins over the global settings.
 
 use crate::config::{AppRule, Config};
+use crate::live::is_wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Send {
@@ -70,13 +71,23 @@ impl Rules {
   /// The finishing touches App rules make to text about to land.
   pub fn format(&self, text: &str) -> String {
     let mut text = text.trim_end().to_string();
-    if !self.final_period && text.ends_with('.') && !text.ends_with("...") {
+    if !self.final_period && text.ends_with(['.', '。']) && !text.ends_with("...") {
       text.pop();
     }
     if self.lowercase {
       text = text.to_lowercase();
     }
     text
+  }
+
+  /// The space that follows a dictation so the next one does not run into
+  /// it. Chinese is written without one.
+  pub fn trailing(&self, text: &str) -> &'static str {
+    if self.trailing_space && !text.ends_with(is_wide) {
+      " "
+    } else {
+      ""
+    }
   }
 
   /// For a chunk live insertion lands mid-dictation: case only. The final
@@ -103,6 +114,14 @@ mod tests {
     assert!(rules.final_period && rules.tidy && rules.trailing_space);
     assert_eq!(rules.send, Send::Never);
     assert_eq!(rules.format("Hello there."), "Hello there.");
+    assert_eq!(
+      (
+        rules.trailing("Hello there."),
+        rules.trailing("好的。"),
+        rules.trailing("好的")
+      ),
+      (" ", "", "")
+    );
   }
 
   #[test]
@@ -112,6 +131,7 @@ mod tests {
     assert_eq!(rules.name, "terminal");
     assert_eq!(rules.send, Send::Spoken);
     assert_eq!(rules.format("run the tests."), "run the tests");
+    assert_eq!(rules.format("跑一下測試。"), "跑一下測試");
     assert_eq!(rules.format("wait..."), "wait...");
   }
 

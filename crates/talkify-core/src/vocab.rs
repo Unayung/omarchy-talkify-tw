@@ -8,18 +8,25 @@
 //! my email => me@x.dev     a snippet: say the trigger, get the expansion
 //! ```
 //!
-//! Parakeet takes no hints, so all of it runs after decoding, over windows
-//! of one to three words. Corrections and snippets match exactly (whole
-//! words, any case, longest first). Preferred words also match by sound
-//! (Double Metaphone) with a bounded edit distance, and only from the same
-//! first letter, so "talker" never becomes "Walker".
+//! It runs after decoding, over windows of one to three words. Corrections
+//! and snippets match exactly (whole words, any case, longest first).
+//! Preferred words also match by sound (Double Metaphone) with a bounded
+//! edit distance, and only from the same first letter, so "talker" never
+//! becomes "Walker".
+//!
+//! Chinese has no spaces to make words of, so a correction or snippet heard
+//! in Chinese ("歐瑪奇 -> Omarchy") matches wherever it appears in a run.
 
 use std::ops::Range;
 
 use rphonetic::DoubleMetaphone;
 
+use crate::live::{gap, is_wide};
+
 /// Longest window, in words, an entry can match.
 const MAX_WINDOW: usize = 3;
+/// How long the hints may grow. Whisper's prompt holds 224 tokens.
+const HINT_CHARS: usize = 400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
@@ -178,6 +185,10 @@ impl Sounds {
   /// Whether `heard` sounds and looks enough like `wanted` (both normalized
   /// and joined) to be that word misheard.
   fn resembles(&self, heard: &str, wanted: &str) -> bool {
+    // Double Metaphone is for Latin letters, and panics on Chinese.
+    if !heard.is_ascii() || !wanted.is_ascii() {
+      return false;
+    }
     if heard.chars().count() < 4 || heard.chars().next() != wanted.chars().next() {
       return false;
     }
@@ -203,6 +214,29 @@ impl Vocabulary {
     self.entries.is_empty()
   }
 
+  /// What the Speech Model is told to expect: the words to prefer and what
+  /// corrections write, each once. Whisper reads only the end of a long
+  /// prompt, so the list stops at `HINT_CHARS`.
+  pub fn hints(&self) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    for entry in &self.entries {
+      if entry.kind != EntryKind::Snippet && !seen.contains(&entry.to.as_str()) {
+        seen.push(&entry.to);
+      }
+    }
+    let mut hints = String::new();
+    for word in seen {
+      if hints.chars().count() + word.chars().count() > HINT_CHARS {
+        break;
+      }
+      if !hints.is_empty() {
+        hints.push_str(", ");
+      }
+      hints.push_str(word);
+    }
+    hints
+  }
+
   pub fn apply(&self, text: &str, fuzzy: bool) -> Applied {
     let tokens = tokens(text);
     let sounds = Sounds::new();
@@ -212,6 +246,14 @@ impl Vocabulary {
     let mut replacements = Vec::new();
     let mut copied = 0;
     let mut index = 0;
+    let wide: Vec<(usize, String)> = self
+      .entries
+      .iter()
+      .enumerate()
+      .filter(|(_, entry)| entry.kind != EntryKind::Word)
+      .map(|(at, entry)| (at, entry.from.concat()))
+      .filter(|(_, from)| from.chars().any(is_wide))
+      .collect();
     while index < tokens.len() {
       let found = (1..=MAX_WINDOW.min(tokens.len() - index))
         .rev()
@@ -221,6 +263,32 @@ impl Vocabulary {
             .map(|entry| (width, entry))
         });
       let Some((width, entry_index)) = found else {
+        let core = tokens[index].core.clone();
+        let mut at = core.start;
+        while at < core.end {
+          let rest = &text[at..core.end];
+          let hit = wide
+            .iter()
+            .filter(|(_, from)| rest.starts_with(from.as_str()))
+            .max_by_key(|(_, from)| from.len());
+          let Some((entry_index, from)) = hit else {
+            at += rest.chars().next().map_or(1, char::len_utf8);
+            continue;
+          };
+          let end = at + from.len();
+          let replacement = &self.entries[*entry_index].to;
+          out.push_str(&text[copied..at]);
+          // English written into a run of Chinese is set off by spaces, as
+          // the Speech Model's own English is.
+          out.push_str(gap(&out, replacement));
+          out.push_str(replacement);
+          out.push_str(gap(replacement, &text[end..core.end]));
+          copied = end;
+          hits.push(*entry_index);
+          spans.push(at..end);
+          replacements.push(replacement.clone());
+          at = end;
+        }
         index += 1;
         continue;
       };
@@ -384,6 +452,36 @@ mod tests {
       "I love Omarchy, really."
     );
     assert_eq!(v.apply("omachines stay", false).text, "omachines stay");
+  }
+
+  #[test]
+  fn chinese_corrections_match_inside_a_run() {
+    let v = vocab("歐瑪奇 -> Omarchy\n我的信箱 => me@x.dev\n庫伯 -> K8s");
+    let applied = v.apply("我在用歐瑪奇的時候，庫伯掛了。", false);
+    assert_eq!(applied.text, "我在用 Omarchy 的時候，K8s 掛了。");
+    assert_eq!(applied.hits, vec![0, 2]);
+    assert_eq!(v.apply("寄到我的信箱", false).text, "寄到 me@x.dev");
+    assert_eq!(v.apply("歐瑪奇 很好", false).text, "Omarchy 很好");
+  }
+
+  #[test]
+  fn sound_matching_leaves_chinese_alone() {
+    let v = vocab("Kubernetes\n簡報");
+    assert_eq!(
+      v.apply("我剛剛發現 kubernetes 的 pod 一直 crash", true)
+        .text,
+      "我剛剛發現 Kubernetes 的 pod 一直 crash"
+    );
+    assert_eq!(
+      Vocabulary::teach("記得先把報告準備好", "簡報").as_deref(),
+      Some("簡報")
+    );
+  }
+
+  #[test]
+  fn hints_list_what_should_be_written_once_and_leave_snippets_out() {
+    let v = vocab("Hyprland\nomachi -> Omarchy\nOmarchy\nmy email => me@x.dev\n歐瑪奇 -> Omarchy");
+    assert_eq!(v.hints(), "Hyprland, Omarchy");
   }
 
   #[test]

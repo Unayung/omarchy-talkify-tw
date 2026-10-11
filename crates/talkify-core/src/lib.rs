@@ -9,6 +9,7 @@ pub mod history;
 pub mod insights;
 pub mod level;
 pub mod live;
+pub mod pieces;
 pub mod protocol;
 pub mod resample;
 pub mod session;
