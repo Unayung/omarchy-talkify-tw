@@ -3,7 +3,10 @@
 //! one. Shared by the Linux daemon and the library the Mac app links, so both
 //! hear the same words.
 
+use std::ffi::c_void;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use talkify_core::chunk;
 use talkify_core::live::{Word, join};
@@ -14,6 +17,8 @@ use whisper_rs::{
 };
 
 pub use whisper_rs::WhisperError;
+
+pub mod ahead;
 
 /// A recording whose loudest sample stays under this (about -66 dB) is
 /// silence.
@@ -47,7 +52,11 @@ pub struct Heard {
 /// The loaded model. One for the process's lifetime: it holds the decoder's
 /// buffers on the GPU, and making one per pass would allocate them every
 /// time.
-pub struct Speech(WhisperState);
+pub struct Speech {
+  state: WhisperState,
+  /// Raised by whoever no longer wants the pass that is running.
+  stop: Arc<AtomicBool>,
+}
 
 impl Speech {
   pub fn open(weights: &Path) -> Result<Self, WhisperError> {
@@ -63,9 +72,16 @@ impl Speech {
       },
       ..Default::default()
     });
-    Ok(Self(
-      WhisperContext::new_with_params(weights, params)?.create_state()?,
-    ))
+    Ok(Self {
+      state: WhisperContext::new_with_params(weights, params)?.create_state()?,
+      stop: Arc::default(),
+    })
+  }
+
+  /// The passes that follow give up, with nothing heard, once `stop` is
+  /// raised.
+  pub fn stop_when(&mut self, stop: Arc<AtomicBool>) {
+    self.stop = stop;
   }
 
   /// A whole recording, however long: decoded in pieces cut at pauses, so
@@ -113,6 +129,13 @@ impl Speech {
     if !hints.is_empty() {
       params.set_initial_prompt(hints);
     }
+    // whisper-rs 0.16's set_abort_callback_safe reads its closure through
+    // the wrong type and stops passes at random, so the flag goes in raw.
+    // It is ours for as long as the pass runs.
+    unsafe {
+      params.set_abort_callback(Some(stopped));
+      params.set_abort_callback_user_data(Arc::as_ptr(&self.stop) as *mut c_void);
+    }
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
@@ -130,14 +153,16 @@ impl Speech {
     if frames < 1500 {
       params.set_audio_ctx(frames as i32);
     }
-    if let Err(error) = self.0.full(params, audio) {
-      tracing::error!("transcription failed: {error}");
+    if let Err(error) = self.state.full(params, audio) {
+      if !self.stop.load(Ordering::Relaxed) {
+        tracing::error!("transcription failed: {error}");
+      }
       return Heard::default();
     }
     // The tokens' bytes are borrowed from a segment that does not outlive its
     // turn of the loop.
     let mut heard: Vec<(Vec<u8>, f32)> = Vec::new();
-    for segment in self.0.as_iter() {
+    for segment in self.state.as_iter() {
       for index in 0..segment.n_tokens() {
         let Some(token) = segment.get_token(index) else {
           continue;
@@ -162,4 +187,8 @@ impl Speech {
       words,
     }
   }
+}
+
+unsafe extern "C" fn stopped(stop: *mut c_void) -> bool {
+  unsafe { &*(stop as *const AtomicBool) }.load(Ordering::Relaxed)
 }

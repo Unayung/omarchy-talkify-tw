@@ -26,6 +26,18 @@ TalkifySpeech *talkify_open(const char *weights_path);
 char *talkify_dictate(TalkifySpeech *speech, const float *samples, size_t count,
                       const char *vocabulary, const char *send_phrases);
 
+// The same dictation, heard as it is recorded. Feed the microphone's samples
+// as they arrive: once the speaker goes quiet the model starts on what there
+// is, so a release that follows shortly has less to wait for.
+//
+//   talkify_begin   a new recording; vocabulary as above.
+//   talkify_feed    more samples. Safe from the audio thread: it copies and
+//                   returns.
+//   talkify_finish  the recording is over. Returns the same JSON.
+void talkify_begin(TalkifySpeech *speech, const char *vocabulary);
+void talkify_feed(TalkifySpeech *speech, const float *samples, size_t count);
+char *talkify_finish(TalkifySpeech *speech, const char *send_phrases);
+
 void talkify_free(char *text);
 void talkify_close(TalkifySpeech *speech);
 
