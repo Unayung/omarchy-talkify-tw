@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/talkify-core", "crates/talkify"]
+members = ["crates/talkify-core", "crates/talkify-speech", "crates/talkify", "crates/talkify-ffi"]
+default-members = ["crates/talkify-core", "crates/talkify-speech", "crates/talkify"]
 
 [workspace.package]
 version = "0.1.0"

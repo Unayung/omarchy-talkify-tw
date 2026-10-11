@@ -1,0 +1,19 @@
+[package]
+name = "talkify-ffi"
+description = "Talkify's Speech Model and text rules as a C library, for the Mac app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "talkify"
+crate-type = ["staticlib"]
+
+[dependencies]
+talkify-core = { path = "../talkify-core" }
+talkify-speech = { path = "../talkify-speech" }
+serde_json = "1"
+
+[features]
+metal = ["talkify-speech/metal"]
+cuda = ["talkify-speech/cuda"]

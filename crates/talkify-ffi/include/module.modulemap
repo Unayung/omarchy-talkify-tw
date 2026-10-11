@@ -1,0 +1,4 @@
+module TalkifyCore {
+  header "talkify.h"
+  export *
+}

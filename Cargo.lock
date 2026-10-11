@@ -1464,9 +1464,9 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "talkify-core",
+ "talkify-speech",
  "tracing",
  "tracing-subscriber",
- "whisper-rs",
  "wl-clipboard-rs",
  "zbus",
 ]
@@ -1480,6 +1480,24 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "talkify-ffi"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "talkify-core",
+ "talkify-speech",
+]
+
+[[package]]
+name = "talkify-speech"
+version = "0.1.0"
+dependencies = [
+ "talkify-core",
+ "tracing",
+ "whisper-rs",
 ]
 
 [[package]]

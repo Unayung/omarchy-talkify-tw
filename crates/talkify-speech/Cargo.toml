@@ -1,0 +1,18 @@
+[package]
+name = "talkify-speech"
+description = "The Speech Model: Breeze ASR 25 through whisper.cpp, and the words it heard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+talkify-core = { path = "../talkify-core" }
+tracing = "0.1"
+whisper-rs = "0.16.0"
+
+# Where the Speech Model runs. With none of them it runs on the CPU, which is
+# slow: cuda on NVIDIA, vulkan on other Linux GPUs, metal on a Mac.
+[features]
+cuda = ["whisper-rs/cuda"]
+vulkan = ["whisper-rs/vulkan"]
+metal = ["whisper-rs/metal"]

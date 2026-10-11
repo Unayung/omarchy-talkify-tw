@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 talkify-core = { path = "../talkify-core" }
+talkify-speech = { path = "../talkify-speech" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.18"
@@ -20,10 +21,9 @@ tracing = "0.1"
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wl-clipboard-rs = "0.9"
-whisper-rs = "0.16.0"
 
 # Where the Speech Model runs. With neither it runs on the CPU, which is slow;
 # install.sh picks cuda when nvcc is there, vulkan when its headers are.
 [features]
-cuda = ["whisper-rs/cuda"]
-vulkan = ["whisper-rs/vulkan"]
+cuda = ["talkify-speech/cuda"]
+vulkan = ["talkify-speech/vulkan"]

@@ -72,6 +72,16 @@ const SCRATCH_MISHEARD: &[&[&str]] = &[&["scratch", "at"], &["delete", "at"], &[
 /// ("逗號" as "都好").
 pub const HINTS: &str = "逗號, 句號, 問號, 驚嘆號, 冒號, 頓號, 換行, 新段落, 刪掉, 送出";
 
+/// What the Speech Model is told to expect: the words this pass listens
+/// for, then the Vocabulary's.
+pub fn hints(vocabulary: &str) -> String {
+  if vocabulary.is_empty() {
+    HINTS.into()
+  } else {
+    format!("{HINTS}, {vocabulary}")
+  }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TidyOptions {
   pub fillers: bool,
