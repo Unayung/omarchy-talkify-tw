@@ -17,6 +17,7 @@ This is a fork of [InsaneArts/talkify-omarchy](https://github.com/InsaneArts/tal
 - **Mandarin with English mixed in.** "請幫我 review 這個 PR，然後把 deploy 的 script 改掉" is written the way you said it.
 - **Spacing.** No spaces between Chinese characters, one space between Chinese and English or numerals.
 - **The Vocabulary is a hint to the model.** Words you add (Kubernetes, Hyprland, your project's name) are given to the Speech Model before it listens, so it spells them right as it hears them. The seed vocabulary is the English an engineer says every day.
+- **A pause is a comma.** Breeze writes no punctuation, so a pause of 0.3 s or more between two words gets one. The threshold is `[tidy] comma_pause` (seconds) in `~/.config/talkify/config.toml`; `0` turns it off. Periods and question marks are still spoken.
 - **Spoken commands in Chinese**, said on their own between two pauses:
 
   | Say | It does |

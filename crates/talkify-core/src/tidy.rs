@@ -11,7 +11,7 @@
 //! it, so the HUD can show a filler fading or a scratched phrase struck
 //! through before the text lands.
 
-use crate::live::{Word, gap, join, merge_punctuation};
+use crate::live::{Word, gap, is_wide, join, merge_punctuation};
 use crate::protocol::{MarkKind, TextMark, utf16_len};
 
 /// Fillers nobody means. Removed wherever they appear.
@@ -29,6 +29,11 @@ const PAUSE: f32 = 0.15;
 const SEND_PAUSE: f32 = 0.25;
 /// A scratch removes back to a sentence end or a pause at least this long.
 const PHRASE_PAUSE: f32 = 0.5;
+/// A pause this long between two kept words gets a comma, unless the config
+/// says otherwise. Breeze writes no punctuation of its own, and telling it
+/// to expect some does not change that. Measured on spoken Mandarin: 0.3 s
+/// and up between clauses, 0.1 s at most inside one.
+pub const COMMA_PAUSE: f32 = 0.3;
 
 const SPOKEN_MARKS: &[(&[&str], &str)] = &[
   (&["new", "paragraph"], "\n\n"),
@@ -88,6 +93,8 @@ pub struct TidyOptions {
   pub stutters: bool,
   pub spoken_punctuation: bool,
   pub scratch: bool,
+  /// Seconds of pause that put a comma between two words; zero for none.
+  pub comma_pause: f32,
   /// Normalized send phrases, each a list of words.
   pub send_phrases: Vec<Vec<String>>,
 }
@@ -99,6 +106,7 @@ impl TidyOptions {
       stutters: true,
       spoken_punctuation: true,
       scratch: true,
+      comma_pause: COMMA_PAUSE,
       send_phrases: parse_phrases(send_phrases),
     }
   }
@@ -109,6 +117,7 @@ impl TidyOptions {
       stutters: false,
       spoken_punctuation: false,
       scratch: false,
+      comma_pause: 0.0,
       send_phrases: Vec::new(),
     }
   }
@@ -368,7 +377,7 @@ pub fn tidy(raw: &[Word], options: &TidyOptions) -> Tidied {
     }
   }
 
-  let kept = assemble(&words, &fates);
+  let kept = assemble(&words, &fates, options.comma_pause);
   Tidied {
     text: join_words(&kept),
     kept,
@@ -386,18 +395,33 @@ pub fn join_words(words: &[Word]) -> String {
 
 /// The kept words, with spoken punctuation turned into marks and the
 /// capitals a removed sentence start leaves behind put right.
-fn assemble(words: &[Word], fates: &[Fate]) -> Vec<Word> {
+fn assemble(words: &[Word], fates: &[Fate], comma_pause: f32) -> Vec<Word> {
   let mut out: Vec<Word> = Vec::new();
   // Whether the next kept word starts a sentence: at the start, after a
   // sentence end, and after a spoken period or new line.
   let mut sentence_start = true;
   let mut capitalise_next = false;
+  let mut follows_kept = false;
   for (word, fate) in words.iter().zip(fates) {
+    let kept_before = std::mem::replace(&mut follows_kept, *fate == Fate::Keep);
     match fate {
       Fate::Keep => {
         let mut kept = word.clone();
         if capitalise_next {
           kept.text = capitalised(&kept.text);
+        }
+        // Only between two words said one after the other: a filler taken
+        // out from between them leaves a gap that was never silence.
+        if let Some(last) = out.last_mut()
+          && comma_pause > 0.0
+          && kept_before
+          && kept.start - last.end >= comma_pause
+          && let Some(before) = last.text.chars().next_back()
+          && before.is_alphanumeric()
+        {
+          // A full-width comma beside Chinese, a plain one inside English.
+          let wide = is_wide(before) || kept.text.chars().next().is_some_and(is_wide);
+          last.text.push(if wide { '，' } else { ',' });
         }
         sentence_start = ends_sentence(&kept.text);
         capitalise_next = false;
@@ -465,6 +489,28 @@ mod tests {
 
   fn tidied(spec: &str) -> String {
     tidy(&said(spec), &TidyOptions::all("send it, press enter")).text
+  }
+
+  #[test]
+  fn a_pause_between_clauses_gets_a_comma() {
+    assert_eq!(
+      tidied("我剛剛把 PR 推上去了 | 你有空幫我 review 一下"),
+      "我剛剛把 PR 推上去了，你有空幫我 review 一下"
+    );
+    assert_eq!(
+      tidied("run the tests | then deploy"),
+      "run the tests, then deploy"
+    );
+    // Not on top of a mark that is already there, spoken or written.
+    assert_eq!(tidied("好的 | 逗號 | 明天見"), "好的，明天見");
+    assert_eq!(tidied("Fine. | Next"), "Fine. Next");
+    // A filler's own length is not a pause.
+    assert_eq!(tidied("the plan uh is fine"), "the plan is fine");
+    let off = TidyOptions {
+      comma_pause: 0.0,
+      ..TidyOptions::all("")
+    };
+    assert_eq!(tidy(&said("好的 | 明天見"), &off).text, "好的明天見");
   }
 
   #[test]

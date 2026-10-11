@@ -41,6 +41,7 @@ impl Daemon {
         stutters: tidy.stutters,
         spoken_punctuation: tidy.spoken_punctuation,
         scratch: tidy.scratch,
+        comma_pause: tidy.comma_pause,
         send_phrases,
       }
     } else {

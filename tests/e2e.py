@@ -385,6 +385,14 @@ def mandarin_with_english_mixed_in(d, root):
 
 
 @test
+def mandarin_pauses_become_commas(d, root):
+  result, _ = d.dictate(speak(root, "zh-commas", "我剛剛把 PR 推上去了，你有空的時候幫我 review 一下。如果 CI 沒過，我明天早上再修。"))
+  text = result["text"]
+  print("   ", text)
+  assert "推上去了，你有空的時候幫我 review 一下，如果 CI 沒過，我明天早上再修" in text, result
+
+
+@test
 def mandarin_spoken_punctuation_and_scratch(d, root):
   result, _ = d.dictate(speak(root, "zh-punct", "今天天氣很好", 700, "逗號", 700, "我們去散步", 700, "句號"))
   assert result["text"].strip() == "今天天氣很好，我們去散步。", result

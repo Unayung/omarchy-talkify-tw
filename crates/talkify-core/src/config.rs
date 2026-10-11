@@ -57,6 +57,8 @@ pub struct TidyConfig {
   pub spoken_punctuation: bool,
   /// "scratch that" / "delete that" removes the phrase before it.
   pub scratch: bool,
+  /// Seconds of pause that put a comma between two words; zero for none.
+  pub comma_pause: f32,
   /// Comma-separated phrases that, said last after a pause, press Enter
   /// where App rules allow it.
   pub send_phrases: String,
@@ -206,6 +208,7 @@ impl Default for TidyConfig {
       stutters: true,
       spoken_punctuation: true,
       scratch: true,
+      comma_pause: crate::tidy::COMMA_PAUSE,
       send_phrases: "send it, press enter, 送出, 送出去".into(),
     }
   }
